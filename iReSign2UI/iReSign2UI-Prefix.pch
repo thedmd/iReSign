@@ -1,0 +1,8 @@
+//
+// Prefix header for all source files of the 'iReSign2UI' target in the 'iReSign2UI' project
+//
+
+#ifdef __OBJC__
+    #import <Cocoa/Cocoa.h>
+    #include <iReSign2.h>
+#endif

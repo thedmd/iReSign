@@ -19,7 +19,7 @@
     
     if ( [[pboard types] containsObject:NSURLPboardType] ) {
         NSArray *files = [pboard propertyListForType:NSFilenamesPboardType];
-        if (files.count <= 0) {
+        if (files.count != 1) {
             return NO;
         }
         self.stringValue = [files objectAtIndex:0];
@@ -46,7 +46,8 @@
         }
     }
     if ( [[pboard types] containsObject:NSFilenamesPboardType] ) {
-        if (sourceDragMask & NSDragOperationCopy) {
+        NSArray *files = [pboard propertyListForType:NSFilenamesPboardType];
+        if (sourceDragMask & NSDragOperationCopy && files.count == 1) {
             return NSDragOperationCopy;
         }
     }

@@ -1,8 +1,9 @@
 //
 //  main.m
-//  iReSign
+//  iReSign2UI
 //
-//  Created by Maciej Swic on 2011-05-16.
+//  Created by Admin on 31.05.2013.
+//  Copyright (c) 2013 Artifex Mundi. All rights reserved.
 //
 
 #import <Cocoa/Cocoa.h>
