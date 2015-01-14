@@ -446,7 +446,7 @@ typedef enum iReSign2Operation
 {
     NSTask* verifyTask = [[NSTask alloc] init];
     [verifyTask setLaunchPath:@"/usr/bin/codesign"];
-    [verifyTask setArguments:[NSArray arrayWithObjects:@"-v", applicationPath, nil]];
+    [verifyTask setArguments:[NSArray arrayWithObjects:@"-v", applicationPath, @"--no-strict", nil]];
     
     NSPipe* pipe = [NSPipe pipe];
     [verifyTask setStandardOutput:pipe];
