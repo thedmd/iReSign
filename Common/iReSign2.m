@@ -13,31 +13,23 @@ static NSString* kKeyBundleIDPlistiTunesArtwork = @"softwareVersionBundleId";
 
 static NSString* kPayloadDirName                = @"Payload";
 static NSString* kInfoPlistFilename             = @"Info.plist";
+static int       kAppleTeamIdLength             = 10;
 
-static NSString* kResourceRules =
+static NSString* kEntitlesment =
 @"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
 @"<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
 @"<plist version=\"1.0\">\n"
 @"<dict>\n"
-@"	<key>rules</key>\n"
-@"	<dict>\n"
-@"		<key>.*</key>\n"
-@"		<true/>\n"
-@"		<key>Info.plist</key>\n"
-@"		<dict>\n"
-@"			<key>omit</key>\n"
-@"			<true/>\n"
-@"			<key>weight</key>\n"
-@"			<real>10</real>\n"
-@"		</dict>\n"
-@"		<key>ResourceRules.plist</key>\n"
-@"		<dict>\n"
-@"			<key>omit</key>\n"
-@"			<true/>\n"
-@"			<key>weight</key>\n"
-@"			<real>100</real>\n"
-@"		</dict>\n"
-@"	</dict>\n"
+@"	<key>application-identifier</key>\n"
+@"	<string>TEAMID.com.randomcompany.randomappname</string>\n"
+@"	<key>com.apple.developer.team-identifier</key>\n"
+@"	<string>TEAMID</string>\n"
+@"	<key>get-task-allow</key>\n"
+@"	<true/>\n"
+@"	<key>keychain-access-groups</key>\n"
+@"	<array>\n"
+@"		<string>TEAMID.com.randomcompany.randomappname</string>\n"
+@"	</array>\n"
 @"</dict>\n"
 @"</plist>\n";
 
@@ -317,10 +309,16 @@ typedef enum iReSign2Operation
         if ((error = [self doProvisioning:mobileProvisionPath applicationPath:applicationPath workingPath:workingPath]))
             return error;
     }
-
+    
+    [self setStatus:@"Extracting TeamID..."];
+    NSString* teamID = [self doExtractTeamID:mobileProvisionPath];
+    if (!teamID)
+        return [self createError:@"Failed to extract TeamId from provisioning profile."];
+    NSLog(@"TeamID=%@", teamID);
+    
     [self setStatus:@"Signing %@...", [applicationPath lastPathComponent]];
     
-    if (![self doCodeSigning:workingPath applicationPath:applicationPath certificateName:certificateName])
+    if (![self doCodeSigning:workingPath applicationPath:applicationPath certificateName:certificateName teamId:teamID])
         return [self createError:@"Failed to sign application."];
     
     
@@ -349,6 +347,38 @@ typedef enum iReSign2Operation
      return [self doAppBundleIDChange:newBundleID workingPath:workingPath] &&
             [self doITunesMetadataBundleIDChange:bundleID workingPath:workingPath];
  }
+
+- (NSString*)doExtractTeamID:(NSString*)profilePath
+{
+    NSString* result;
+    NSError* error;
+    NSData* profileContentBinary = [NSData dataWithContentsOfFile:profilePath options:0 error:&error];
+ 
+    if (error)
+        NSLog(@"Error reading provisioning profile: %@", error.localizedDescription);
+
+    // Search for specific key in plist part of the provisioning profile...
+    NSData* pattern = [@"<key>com.apple.developer.team-identifier</key>" dataUsingEncoding:NSUTF8StringEncoding];
+    NSRange range = [profileContentBinary rangeOfData:pattern options:0 range:NSMakeRange(0, profileContentBinary.length)];
+
+    if (range.location != NSNotFound)
+    {
+        // Search from key value...
+        NSData* patternValue = [@"<string>" dataUsingEncoding:NSUTF8StringEncoding];
+        NSRange teamIdRange = [profileContentBinary rangeOfData:patternValue options:0 range:NSMakeRange(range.location, 100)];
+        
+        if (teamIdRange.location != NSNotFound)
+        {
+            // Value found. Copy to result.
+            NSData* teamID = [profileContentBinary subdataWithRange:NSMakeRange(teamIdRange.location + teamIdRange.length, kAppleTeamIdLength)];
+            result = [[NSString alloc] initWithData:teamID encoding:NSUTF8StringEncoding];
+        }
+    }
+    else
+        NSLog(@"Invalid profivioning profile format. TeamId not found.");
+
+    return result;
+}
 
 - (BOOL)doITunesMetadataBundleIDChange:(NSString *)newBundleID workingPath:(NSString*)workingPath
 {
@@ -413,15 +443,21 @@ typedef enum iReSign2Operation
     return nil;
 }
 
-- (bool)doCodeSigning:(NSString*)workingPath applicationPath:(NSString*)applicationPath certificateName:(NSString*)_certificateName
+- (bool)doCodeSigning:(NSString*)workingPath applicationPath:(NSString*)applicationPath certificateName:(NSString*)_certificateName teamId:(NSString*)_teamId
 {
-    NSString* resourceRulesPath     = [workingPath stringByAppendingPathComponent:@"ResourceRules.plist"];
-    [kResourceRules writeToFile:resourceRulesPath atomically:true encoding:NSUTF8StringEncoding error:nil];
-    NSString *resourceRulesArgument = [NSString stringWithFormat:@"--resource-rules=%@", resourceRulesPath];
+    // Replace TeamID in Entitlesments
+    NSString* entitlesmentContent = kEntitlesment;
+    entitlesmentContent = [entitlesmentContent stringByReplacingOccurrencesOfString:@"TEAMID" withString:_teamId];
+
+
+
+    NSLog(@"Codesigning with default entitlesments...");
+    NSString* entitlesmentPath     = [workingPath stringByAppendingPathComponent:@"EntitlesmentTemp.xml"];
+    [entitlesmentContent writeToFile:entitlesmentPath atomically:true encoding:NSUTF8StringEncoding error:nil];
 
     NSTask* codesignTask = [[NSTask alloc] init];
     [codesignTask setLaunchPath:@"/usr/bin/codesign"];
-    [codesignTask setArguments:[NSArray arrayWithObjects:@"-fs", _certificateName, resourceRulesArgument, applicationPath, nil]];
+    [codesignTask setArguments:[NSArray arrayWithObjects:@"--entitlements", entitlesmentPath, @"-fs", _certificateName, applicationPath, nil]];
 
     NSPipe* pipe = [NSPipe pipe];
     [codesignTask setStandardOutput:pipe];
@@ -431,11 +467,11 @@ typedef enum iReSign2Operation
     [codesignTask launch];
     [codesignTask waitUntilExit];
     
-    [[NSFileManager defaultManager] removeItemAtPath:resourceRulesPath error:nil];
+    [[NSFileManager defaultManager] removeItemAtPath:entitlesmentPath error:nil];
 
     NSString* result = [[NSString alloc] initWithData:[handle readDataToEndOfFile] encoding:NSASCIIStringEncoding];
     NSLog(@"%@", result);
-
+    
     if (codesignTask.terminationReason != NSTaskTerminationReasonExit || codesignTask.terminationStatus != 0)
         return false;
     
