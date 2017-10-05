@@ -1,8 +1,8 @@
-# Introduction #
+# Introduction
 
 iReSign allows iDevice app bundles (.ipa) files to be signed or resigned with a digital certificate from Apple for distribution. This tool is aimed at enterprises users, for enterprise deployment, when the person signing the app is different than the person(s) developing it.
 
-## Requirements ##
+## Requirements
 
 - Mac OS 10.5+
 - A certificate issued by Apple.
@@ -25,6 +25,6 @@ Usage: /usr/bin/codesign_allocate -i input [-a <arch> <size>]... [-A <cputype> <
 Once this is in place, you should be able to re-sign applications with the iReSign tool without any issues.
 
 
-## iReSign is NOT intended for piracy. Issues about piracy will be ignored.##
+## iReSign is NOT intended for piracy. Issues about piracy will be ignored.
 
-*The name iReSign is Copyright Â©2010 Maciej Swic. All rights reserved.*
+*The name iReSign is Copyright ©2010 Maciej Swic. All rights reserved.*
