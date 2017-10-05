@@ -13,31 +13,23 @@ static NSString* kKeyBundleIDPlistiTunesArtwork = @"softwareVersionBundleId";
 
 static NSString* kPayloadDirName                = @"Payload";
 static NSString* kInfoPlistFilename             = @"Info.plist";
+static int       kAppleTeamIdLength             = 10;
 
-static NSString* kResourceRules =
+static NSString* kEntitlesment =
 @"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
 @"<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
 @"<plist version=\"1.0\">\n"
 @"<dict>\n"
-@"	<key>rules</key>\n"
-@"	<dict>\n"
-@"		<key>.*</key>\n"
-@"		<true/>\n"
-@"		<key>Info.plist</key>\n"
-@"		<dict>\n"
-@"			<key>omit</key>\n"
-@"			<true/>\n"
-@"			<key>weight</key>\n"
-@"			<real>10</real>\n"
-@"		</dict>\n"
-@"		<key>ResourceRules.plist</key>\n"
-@"		<dict>\n"
-@"			<key>omit</key>\n"
-@"			<true/>\n"
-@"			<key>weight</key>\n"
-@"			<real>100</real>\n"
-@"		</dict>\n"
-@"	</dict>\n"
+@"	<key>application-identifier</key>\n"
+@"	<string>TEAMID.com.randomcompany.randomappname</string>\n"
+@"	<key>com.apple.developer.team-identifier</key>\n"
+@"	<string>TEAMID</string>\n"
+@"	<key>get-task-allow</key>\n"
+@"	<true/>\n"
+@"	<key>keychain-access-groups</key>\n"
+@"	<array>\n"
+@"		<string>TEAMID.com.randomcompany.randomappname</string>\n"
+@"	</array>\n"
 @"</dict>\n"
 @"</plist>\n";
 
@@ -63,7 +55,7 @@ typedef enum iReSign2Operation
         unsigned int resignDidStatusChange:1;
         unsigned int resignDidFailWithError:1;
     } delegateRespondsTo;
-    
+
     bool                    _isBusy;
     float                   _progress;
     NSCondition*            _waitCondition;
@@ -96,31 +88,31 @@ typedef enum iReSign2Operation
 - (id)initWithCertificateName:(NSString*)_certificateName mobileProvisionPath:(NSString*)_mobileProvisionPath bundleID:(NSString*)_bundleID error:(NSError**)error
 {
     self = [super init];
-    
+
     if (nil != self)
     {
         memset(&delegateRespondsTo, 0, sizeof(delegateRespondsTo));
-        
+
         _waitCondition = [[NSCondition alloc] init];
-        
+
         certificateName = _certificateName;
         mobileProvisionPath = _mobileProvisionPath;
         bundleID = _bundleID;
-        
+
         _isBusy    = false;
         _progress  = 0.0f;
-        
+
         NSFileManager* fileManager = [NSFileManager defaultManager];
-        
+
         NSError* creationError = nil;
-        
+
         if (![fileManager fileExistsAtPath:@"/usr/bin/zip"])
             creationError = [self createError:@"Failed to locate zip utility at /usr/bin/zip"];
         else if (![fileManager fileExistsAtPath:@"/usr/bin/unzip"])
             creationError = [self createError:@"Failed to locate unzip utility at /usr/bin/unzip"];
         else if (![fileManager fileExistsAtPath:@"/usr/bin/codesign"])
             creationError = [self createError:@"Failed to locate codesign utility at /usr/bin/codesign"];
-        
+
         if (creationError)
         {
             if (error)
@@ -128,7 +120,7 @@ typedef enum iReSign2Operation
             return nil;
         }
     }
-    
+
     return self;
 }
 
@@ -136,7 +128,7 @@ typedef enum iReSign2Operation
 {
     if (delegate != _delegate) {
         delegate = _delegate;
-        
+
         delegateRespondsTo.resignDidBegin          = [_delegate respondsToSelector:@selector(resignDidBegin:)];
         delegateRespondsTo.resignDidEnd            = [_delegate respondsToSelector:@selector(resignDidEnd:)];
         delegateRespondsTo.resignDidProgressChange = [_delegate respondsToSelector:@selector(resign:didProgressChange:)];
@@ -192,7 +184,7 @@ typedef enum iReSign2Operation
     va_start(args, format);
     NSString* formatedStatus = [[NSString alloc] initWithFormat:format arguments:args];
     va_end(args);
-    
+
     [self invokeResignDidStatusChange:formatedStatus];
 }
 
@@ -220,25 +212,25 @@ typedef enum iReSign2Operation
         [_waitCondition unlock];
         return;
     }
-    
+
     _isBusy = true;
     [_waitCondition unlock];
-    
+
     dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
-    
+
     dispatch_async(queue, ^{
         [self invokeResignDidBegin];
-        
+
         self.progress = 0.0f;
-        
+
         NSError* error = [self doResign];
         if (error != nil)
             [self invokeResignDidFailWithError:error];
         else
             self.progress = 1.0f;
-        
+
         [self invokeResignDidEnd];
-        
+
         [_waitCondition lock];
         _isBusy = false;
         [_waitCondition signal];
@@ -260,17 +252,17 @@ typedef enum iReSign2Operation
     va_start(args, format);
     NSString* formatedError = [[NSString alloc] initWithFormat:format arguments:args];
     va_end(args);
-    
+
     NSMutableDictionary *errorDetail = [NSMutableDictionary dictionary];
     [errorDetail setValue:formatedError forKey:NSLocalizedDescriptionKey];
-    
+
     return [NSError errorWithDomain:@"iReSign2" code:100 userInfo:errorDetail];
 }
 
 - (NSError*)doResign
 {
     NSFileManager* fileManager = [NSFileManager defaultManager];
-    
+
     [self setStatus:@"Checking IPA file..."];
 
     if (![fileManager fileExistsAtPath:ipaPath])
@@ -278,69 +270,75 @@ typedef enum iReSign2Operation
 
     if (![[[ipaPath pathExtension] lowercaseString] isEqualToString:@"ipa"])
         return [self createError:@"Choosed file is not an IPA file"];
-    
+
     if ([certificateName length] == 0)
         return [self createError:@"Provide certificate name in order to resing an IPA."];
 
     NSString* workingPath = [self getTemporaryDirectory];
     if (nil == workingPath)
         return [self createError:@"Failed to create temporary directory."];
-    
+
     [self setStatus:@"Extracting original application..."];
     NSTask* unzipTask = [NSTask launchedTaskWithLaunchPath:@"/usr/bin/unzip" arguments:[NSArray arrayWithObjects:@"-q", ipaPath, @"-d", workingPath, nil]];
     [unzipTask waitUntilExit];
     if (unzipTask.terminationReason != NSTaskTerminationReasonExit || unzipTask.terminationStatus != 0)
         return [self createError:@"Failed to extract original application."];
-    
+
     [self setStatus:@"Extraction complete"];
 
     if (![fileManager fileExistsAtPath:[workingPath stringByAppendingPathComponent:kPayloadDirName]])
         return [self createError:@"Failed to locate payload."];
-    
+
     if ([bundleID length] > 0)
     {
         [self setStatus:@"Replacing bundle ID..."];
-        
+
         if (![self doChangeBundleID:bundleID workingPath:workingPath])
             return [self createError:@"Failed to change bundle ID."];;
     }
-    
+
     NSString* applicationPath = [self doFindApplication: workingPath];
     if (nil == applicationPath)
         return [self createError:@"Failed to locate application in payload directory."];
-    
+
     if ([mobileProvisionPath length] > 0)
     {
         NSError* error = nil;
-        
+
         [self setStatus:@"Provisioning %@...", [applicationPath lastPathComponent]];
         if ((error = [self doProvisioning:mobileProvisionPath applicationPath:applicationPath workingPath:workingPath]))
             return error;
     }
 
+    [self setStatus:@"Extracting TeamID..."];
+    NSString* teamID = [self doExtractTeamID:mobileProvisionPath];
+    if (!teamID)
+        return [self createError:@"Failed to extract TeamId from provisioning profile."];
+    NSLog(@"TeamID=%@", teamID);
+
     [self setStatus:@"Signing %@...", [applicationPath lastPathComponent]];
-    
-    if (![self doCodeSigning:workingPath applicationPath:applicationPath certificateName:certificateName])
+
+    if (![self doCodeSigning:workingPath applicationPath:applicationPath certificateName:certificateName teamId:teamID])
         return [self createError:@"Failed to sign application."];
-    
-    
+
+
     [self setStatus:@"Verifying %@...", [applicationPath lastPathComponent]];
-    
+
     if (![self doVerifySignature:applicationPath])
         return [self createError:@"Failed to verify application signature."];
 
     [self setStatus:@"Compressing..."];
-    
+
     //NSString* destinationPath = [NSString stringWithFormat:@"%@%@.%@", [ipaPath stringByDeletingPathExtension], @"-resigned", [ipaPath pathExtension]];
     NSString* destinationPath = [self resignedIpaPath];
-    
+
     if (![self doZip:destinationPath workingPath:workingPath])
         return [self createError:@"Failed to compress new IPA."];
-    
+
     [self setStatus:@"IPA resigned"];
-    
+
     [fileManager removeItemAtPath:workingPath error:nil];
-    
+
     return nil;
 }
 
@@ -350,22 +348,54 @@ typedef enum iReSign2Operation
             [self doITunesMetadataBundleIDChange:bundleID workingPath:workingPath];
  }
 
+- (NSString*)doExtractTeamID:(NSString*)profilePath
+{
+    NSString* result;
+    NSError* error;
+    NSData* profileContentBinary = [NSData dataWithContentsOfFile:profilePath options:0 error:&error];
+
+    if (error)
+        NSLog(@"Error reading provisioning profile: %@", error.localizedDescription);
+
+    // Search for specific key in plist part of the provisioning profile...
+    NSData* pattern = [@"<key>com.apple.developer.team-identifier</key>" dataUsingEncoding:NSUTF8StringEncoding];
+    NSRange range = [profileContentBinary rangeOfData:pattern options:0 range:NSMakeRange(0, profileContentBinary.length)];
+
+    if (range.location != NSNotFound)
+    {
+        // Search from key value...
+        NSData* patternValue = [@"<string>" dataUsingEncoding:NSUTF8StringEncoding];
+        NSRange teamIdRange = [profileContentBinary rangeOfData:patternValue options:0 range:NSMakeRange(range.location, 100)];
+
+        if (teamIdRange.location != NSNotFound)
+        {
+            // Value found. Copy to result.
+            NSData* teamID = [profileContentBinary subdataWithRange:NSMakeRange(teamIdRange.location + teamIdRange.length, kAppleTeamIdLength)];
+            result = [[NSString alloc] initWithData:teamID encoding:NSUTF8StringEncoding];
+        }
+    }
+    else
+        NSLog(@"Invalid profivioning profile format. TeamId not found.");
+
+    return result;
+}
+
 - (BOOL)doITunesMetadataBundleIDChange:(NSString *)newBundleID workingPath:(NSString*)workingPath
 {
     NSArray *dirContents = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:workingPath error:nil];
     NSString *infoPlistPath = nil;
-    
+
     for (NSString *file in dirContents) {
         if ([[[file pathExtension] lowercaseString] isEqualToString:@"plist"]) {
             infoPlistPath = [workingPath stringByAppendingPathComponent:file];
             break;
         }
     }
-    
+
     // For self-created IPA files iTunes Artwork is not present.
     if (nil == infoPlistPath)
         return true;
-    
+
     return [self changeBundleIDForFile:infoPlistPath bundleIDKey:kKeyBundleIDPlistiTunesArtwork newBundleID:newBundleID plistOutOptions:NSPropertyListXMLFormat_v1_0];
 }
 
@@ -373,7 +403,7 @@ typedef enum iReSign2Operation
 {
     NSArray *dirContents = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:[workingPath stringByAppendingPathComponent:kPayloadDirName] error:nil];
     NSString *infoPlistPath = nil;
-    
+
     for (NSString *file in dirContents) {
         if ([[[file pathExtension] lowercaseString] isEqualToString:@"app"]) {
             infoPlistPath = [[[workingPath stringByAppendingPathComponent:kPayloadDirName]
@@ -382,24 +412,24 @@ typedef enum iReSign2Operation
             break;
         }
     }
-    
+
     return [self changeBundleIDForFile:infoPlistPath bundleIDKey:kKeyBundleIDPlistApp newBundleID:newBundleID plistOutOptions:NSPropertyListBinaryFormat_v1_0];
 }
 
 - (BOOL)changeBundleIDForFile:(NSString *)filePath bundleIDKey:(NSString *)bundleIDKey newBundleID:(NSString *)newBundleID plistOutOptions:(NSPropertyListWriteOptions)options
 {
     NSMutableDictionary *plist = nil;
-    
+
     if ([[NSFileManager defaultManager] fileExistsAtPath:filePath]) {
         plist = [[NSMutableDictionary alloc] initWithContentsOfFile:filePath];
         [plist setObject:newBundleID forKey:bundleIDKey];
-        
+
         NSData *xmlData = [NSPropertyListSerialization dataWithPropertyList:plist format:options options:kCFPropertyListImmutable error:nil];
-        
+
         return [xmlData writeToFile:filePath atomically:YES];
-        
+
     }
-    
+
     return NO;
 }
 
@@ -409,19 +439,25 @@ typedef enum iReSign2Operation
     for (NSString *file in dirContents)
         if ([[[file pathExtension] lowercaseString] isEqualToString:@"app"])
             return [[workingPath stringByAppendingPathComponent:kPayloadDirName] stringByAppendingPathComponent:file];
-    
+
     return nil;
 }
 
-- (bool)doCodeSigning:(NSString*)workingPath applicationPath:(NSString*)applicationPath certificateName:(NSString*)_certificateName
+- (bool)doCodeSigning:(NSString*)workingPath applicationPath:(NSString*)applicationPath certificateName:(NSString*)_certificateName teamId:(NSString*)_teamId
 {
-    NSString* resourceRulesPath     = [workingPath stringByAppendingPathComponent:@"ResourceRules.plist"];
-    [kResourceRules writeToFile:resourceRulesPath atomically:true encoding:NSUTF8StringEncoding error:nil];
-    NSString *resourceRulesArgument = [NSString stringWithFormat:@"--resource-rules=%@", resourceRulesPath];
+    // Replace TeamID in Entitlesments
+    NSString* entitlesmentContent = kEntitlesment;
+    entitlesmentContent = [entitlesmentContent stringByReplacingOccurrencesOfString:@"TEAMID" withString:_teamId];
+
+
+
+    NSLog(@"Codesigning with default entitlesments...");
+    NSString* entitlesmentPath     = [workingPath stringByAppendingPathComponent:@"EntitlesmentTemp.xml"];
+    [entitlesmentContent writeToFile:entitlesmentPath atomically:true encoding:NSUTF8StringEncoding error:nil];
 
     NSTask* codesignTask = [[NSTask alloc] init];
     [codesignTask setLaunchPath:@"/usr/bin/codesign"];
-    [codesignTask setArguments:[NSArray arrayWithObjects:@"-fs", _certificateName, resourceRulesArgument, applicationPath, nil]];
+    [codesignTask setArguments:[NSArray arrayWithObjects:@"--entitlements", entitlesmentPath, @"-fs", _certificateName, applicationPath, nil]];
 
     NSPipe* pipe = [NSPipe pipe];
     [codesignTask setStandardOutput:pipe];
@@ -430,15 +466,15 @@ typedef enum iReSign2Operation
 
     [codesignTask launch];
     [codesignTask waitUntilExit];
-    
-    [[NSFileManager defaultManager] removeItemAtPath:resourceRulesPath error:nil];
+
+    [[NSFileManager defaultManager] removeItemAtPath:entitlesmentPath error:nil];
 
     NSString* result = [[NSString alloc] initWithData:[handle readDataToEndOfFile] encoding:NSASCIIStringEncoding];
     NSLog(@"%@", result);
 
     if (codesignTask.terminationReason != NSTaskTerminationReasonExit || codesignTask.terminationStatus != 0)
         return false;
-    
+
     return true;
 }
 
@@ -447,21 +483,21 @@ typedef enum iReSign2Operation
     NSTask* verifyTask = [[NSTask alloc] init];
     [verifyTask setLaunchPath:@"/usr/bin/codesign"];
     [verifyTask setArguments:[NSArray arrayWithObjects:@"-v", applicationPath, @"--no-strict", nil]];
-    
+
     NSPipe* pipe = [NSPipe pipe];
     [verifyTask setStandardOutput:pipe];
     [verifyTask setStandardError:pipe];
     NSFileHandle* handle = [pipe fileHandleForReading];
-    
+
     [verifyTask launch];
     [verifyTask waitUntilExit];
-    
+
     if (verifyTask.terminationReason != NSTaskTerminationReasonExit || verifyTask.terminationStatus != 0)
         return false;
-    
+
     NSString* result = [[NSString alloc] initWithData:[handle readDataToEndOfFile] encoding:NSASCIIStringEncoding];
     NSLog(@"%@", result);
-    
+
     return true;
 }
 
@@ -470,13 +506,13 @@ typedef enum iReSign2Operation
     NSString* applicationProvisioningPath = [applicationPath stringByAppendingPathComponent:@"embedded.mobileprovision"];
     if ([[NSFileManager defaultManager] fileExistsAtPath:applicationProvisioningPath])
         [[NSFileManager defaultManager] removeItemAtPath:applicationProvisioningPath error:nil];
-    
+
     NSTask* provisioningTask = [[NSTask alloc] init];
     [provisioningTask setLaunchPath:@"/bin/cp"];
     [provisioningTask setArguments:[NSArray arrayWithObjects:provisioningPath, applicationProvisioningPath, nil]];
     [provisioningTask launch];
     [provisioningTask waitUntilExit];
-    
+
     if (provisioningTask.terminationReason != NSTaskTerminationReasonExit || provisioningTask.terminationStatus != 0)
         return [self createError:@"Failed to copy mobile provisioning."];
 
@@ -484,28 +520,28 @@ typedef enum iReSign2Operation
     {
         bool isIdentifierOK = false;
         NSString* identifierInProvisioning = @"";
-        
+
         NSString* embeddedProvisioning = [NSString stringWithContentsOfFile:applicationProvisioningPath encoding:NSASCIIStringEncoding error:nil];
         NSArray* embeddedProvisioningLines = [embeddedProvisioning componentsSeparatedByCharactersInSet: [NSCharacterSet newlineCharacterSet]];
-        
+
         for (int i = 0; i <= [embeddedProvisioningLines count]; i++)
         {
             if ([[embeddedProvisioningLines objectAtIndex:i] rangeOfString:@"application-identifier"].location != NSNotFound)
             {
                 NSInteger fromPosition = [[embeddedProvisioningLines objectAtIndex:i+1] rangeOfString:@"<string>"].location + 8;
                 NSInteger toPosition   = [[embeddedProvisioningLines objectAtIndex:i+1] rangeOfString:@"</string>"].location;
-                
+
                 NSRange range;
                 range.location = fromPosition;
                 range.length   = toPosition - fromPosition;
-                
+
                 NSString* fullIdentifier = [[embeddedProvisioningLines objectAtIndex:i+1] substringWithRange:range];
-                
+
                 NSArray* identifierComponents = [fullIdentifier componentsSeparatedByString:@"."];
-                
+
                 if ([[identifierComponents lastObject] isEqualTo:@"*"])
                     isIdentifierOK = true;
-                
+
                 for (int i = 1; i < [identifierComponents count]; i++)
                 {
                     identifierInProvisioning = [identifierInProvisioning stringByAppendingString:[identifierComponents objectAtIndex:i]];
@@ -515,19 +551,19 @@ typedef enum iReSign2Operation
                 break;
             }
         }
-        
+
         NSLog(@"Mobileprovision identifier: %@", identifierInProvisioning);
-        
+
         NSString *infoPlist = [NSString stringWithContentsOfFile:[applicationPath stringByAppendingPathComponent:kInfoPlistFilename] encoding:NSASCIIStringEncoding error:nil];
         if ([infoPlist rangeOfString:identifierInProvisioning].location != NSNotFound)
         {
             NSLog(@"Identifiers match");
             isIdentifierOK = true;
         }
-        
+
         if (!isIdentifierOK)
             return [self createError:@"Provisioning failed: Product identifiers don't match."];
-        
+
         return nil;
     }
     else
@@ -542,10 +578,10 @@ typedef enum iReSign2Operation
     [zipTask setArguments:[NSArray arrayWithObjects:@"-qry", destinationPath, @".", nil]];
     [zipTask launch];
     [zipTask waitUntilExit];
-    
+
     if (zipTask.terminationReason != NSTaskTerminationReasonExit || zipTask.terminationStatus != 0)
         return false;
-    
+
     return true;
 }
 
